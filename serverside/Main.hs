@@ -15,6 +15,7 @@ import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.FromRow
 import Data.Aeson
 import System.Posix.Syslog
+import System.Process
 
 main = withSyslog defaultConfig (\log' -> let ?log = log' in server)
 
@@ -23,7 +24,7 @@ server = do
   scotty 3000 $ do
     get "/" $ do
       liftIO (print ("empty request"))
-      Web.Scotty.file "../generated/index.html"    
+      Web.Scotty.file "generated/index.html"    
     get "/:string" $ do
       string <- param "string"
       liftIO (print ("request " ++ string))
@@ -31,7 +32,7 @@ server = do
       Web.Scotty.json a
     notFound $ do
       liftIO (print ("404"))
-      Web.Scotty.file "../generated/Main.js"    
+      Web.Scotty.file "generated/Main.js"    
 
 queryPhoneDatabase :: (?log::SyslogFn) => String -> IO [PhonebookRecord]
 queryPhoneDatabase string = do 

@@ -1,1 +1,1 @@
-{ "server" : "localhost:3000" }
+{ "protocol" : "http", "server" : "localhost:3000" }

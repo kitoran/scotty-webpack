@@ -48,7 +48,7 @@ main = void $ launchAff $ do
  elm' = do
   win <- window
   doc <- document win
-  elm <- getElementById (ElementId "example") (documentToNonElementParentNode (htmlDocumentToDocument doc))
+  elm <- getElementById (ElementId "content") (documentToNonElementParentNode (htmlDocumentToDocument doc))
   pure $ saneFromJust (toMaybe elm)
 {-
 s::forall d. d -> d -> d
