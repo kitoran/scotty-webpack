@@ -1,50 +1,74 @@
 {-# LANGUAGE NoMonomorphismRestriction
            , OverloadedStrings
            , DeriveGeneric
-           , ImplicitParams #-}
+           , FlexibleContexts             #-}
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.IO.Class
-import Data.ByteString.Lazy
-import Data.Text.Lazy.Encoding
-import GHC.Generics
+import Control.Monad.Reader
+
+import Data.Monoid
+import Data.Text.Lazy
+import Data.Aeson
+import Data.String
+
+import Control.Monad.Logger ( runStdoutLoggingT, MonadLogger, logDebug, LoggingT )
+
+
+import Database.PostgreSQL.Simple as Psql
 
 import Web.Scotty
-import Database.PostgreSQL.Simple
-import Database.PostgreSQL.Simple.FromRow
-import Data.Aeson
-import System.Posix.Syslog
-import System.Process
 
-main = withSyslog defaultConfig (\log' -> let ?log = log' in server)
 
-server :: (?log::SyslogFn) => IO ()
-server = do
-  scotty 3000 $ do
-    get "/" $ do
-      liftIO (print ("empty request"))
-      Web.Scotty.file "generated/index.html"    
-    get "/:string" $ do
-      string <- param "string"
-      liftIO (print ("request " ++ string))
-      a <- liftIO $ queryPhoneDatabase string
-      Web.Scotty.json a
-    notFound $ do
-      liftIO (print ("404"))
-      Web.Scotty.file "generated/Main.js"    
+ourConnectionInfo :: ConnectInfo
+ourConnectionInfo = defaultConnectInfo  
 
-queryPhoneDatabase :: (?log::SyslogFn) => String -> IO [PhonebookRecord]
-queryPhoneDatabase string = do 
-    conn <- connectPostgreSQL ""
-    i <- query conn "select string, number from helloworldt where string = ?;" $ Only string
-    when (Prelude.null i)
-         (?log USER Warning "No such record in database")
-    return i
-    
-data PhonebookRecord = PhonebookRecord { phonebookName :: String, phonebookNumber :: Int } deriving (Show, Eq, Generic)
+queryRead :: (MonadReader Connection m, ToRow args, FromRow r, MonadIO m) => Query -> args -> m [r]
+queryRead q args = ask >>= \conn -> liftIO $ query conn q args
 
-instance ToJSON PhonebookRecord where
+queryRead_ :: (MonadReader Connection m, FromRow r, MonadIO m) => Query -> m [r]
+queryRead_ q = ask >>= \conn -> liftIO $ query_ conn q 
 
-instance FromRow PhonebookRecord where
-    fromRow = PhonebookRecord <$> field <*> field
+type MyMonad a = LoggingT ((ReaderT Connection) ActionM) a
+
+runMyMonad::Connection -> MyMonad a -> ActionM a
+runMyMonad conn m = runReaderT (runStdoutLoggingT m) conn 
+
+main = do 
+    conn <- (connect ourConnectionInfo)
+    scotty 3000 $ do 
+      post "someRoute" $ runMyMonad conn smth
+
+paramMaybe :: (Parsable a) => Text -> ActionM (Maybe a) 
+paramMaybe s = (do d <- param s
+                   return (Just d)) `rescue` const (return Nothing)
+
+program = paramMaybe "program"
+city = paramMaybe "city"
+
+smth :: MyMonad ()
+smth = do
+  program' <- liftAction $ (fmap.fmap)  fromString program
+  city' <- liftAction $ (fmap.fmap) fromString city
+  let programString   = maybe "" (\s -> "and (program is not null) and (program = " <> s <> ")") (program'::Maybe Query)
+  -- look out for sql-injections! Perhaps quote_literal(" <> s <> ")?
+      cityString      =  maybe "" (\s -> "and (city is not null) and (city = " <> s <> ")") ( city'::Maybe Query)
+      callerQuery, userCallerQuery, caseQuery::Query
+      callerQuery     = "select callertype, calltype, count(*) from calltbl where"
+                       <> "(calldate >= ?) and (calldate < ?) and (calldate is not null) " <> programString <>
+                             cityString <>
+                             " group by callertype, calltype order by callertype, calltype"
+      userCallerQuery = mconcat [
+                                  "select u.realName, count(*) from calltbl c, usermetatbl u where",
+                                  " u.id = c.calltaker and",
+                                  " (calldate >= ?) and (calldate < ?) and (calldate is not null) ",
+                                  programString, cityString,
+                                  " group by u.realName order by u.realName"]
+      caseQuery       = mconcat [
+                            "select u.realName, count(*) from casetbl c, usermetatbl u where",
+                            " u.id = c.calltaker and",
+                            " (calldate >= ?) and (calldate < ?) and (calldate is not null) , ",
+                            programString,  cityString,
+                            " group by u.realName order by u.realName"]
+  calls <- queryRead_ callerQuery
+  liftAction $ Web.Scotty.json (toJSON (calls::[[Text]]))
+  where liftAction = lift . lift
+
