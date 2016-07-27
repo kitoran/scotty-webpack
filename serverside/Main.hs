@@ -2,73 +2,80 @@
            , OverloadedStrings
            , DeriveGeneric
            , FlexibleContexts             #-}
-
+{-# LANGUAGE EmptyDataDecls             #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE TemplateHaskell            #-}
 import Control.Monad.Reader
 
 import Data.Monoid
 import Data.Text.Lazy
-import Data.Aeson
+import Data.Aeson as A
+import Data.Time.Calendar
 import Data.String
 
+import GHC.Generics
+
+import Database.Esqueleto as E ()
 import Control.Monad.Logger ( runStdoutLoggingT, MonadLogger, logDebug, LoggingT )
 
+import           Database.Persist.Postgresql
+import           Database.Persist.TH
 
-import Database.PostgreSQL.Simple as Psql
+import Web.Scotty as S
 
-import Web.Scotty
+mkPersist sqlSettings [persistLowerCase|
+Calltbl
+    callertype String 
+    calltype String
+    calldate Day Maybe
+    program String Maybe
+    city String Maybe
+    deriving Show Read Generic
+|]
 
+instance ToJSON Calltbl where
+--ourConnectionInfo :: ConnectInfo
+ourConnectionInfo =  "host=localhost port=5432 user=n dbname=postgresdatabase password=postgresspassword"  
 
-ourConnectionInfo :: ConnectInfo
-ourConnectionInfo = defaultConnectInfo  
+--queryRead :: (MonadReader Connection m, ToRow args, FromRow r, MonadIO m) => Query -> args -> m [r]
+--queryRead q args = ask >>= \conn -> liftIO $ query conn q args
 
-queryRead :: (MonadReader Connection m, ToRow args, FromRow r, MonadIO m) => Query -> args -> m [r]
-queryRead q args = ask >>= \conn -> liftIO $ query conn q args
+--queryRead_ :: (MonadReader Connection m, FromRow r, MonadIO m) => Query -> m [r]
+--queryRead_ q = ask >>= \conn -> liftIO $ query_ conn q 
 
-queryRead_ :: (MonadReader Connection m, FromRow r, MonadIO m) => Query -> m [r]
-queryRead_ q = ask >>= \conn -> liftIO $ query_ conn q 
-
-type MyMonad a = LoggingT ((ReaderT Connection) ActionM) a
-
-runMyMonad::Connection -> MyMonad a -> ActionM a
-runMyMonad conn m = runReaderT (runStdoutLoggingT m) conn 
-
-main = do 
-    conn <- (connect ourConnectionInfo)
-    scotty 3000 $ do 
-      post "someRoute" $ runMyMonad conn smth
+main :: IO ()
+main = runStdoutLoggingT $ withPostgresqlConn ourConnectionInfo $ (\sqlBackend -> do
+    liftIO $ scotty 3000 $ do 
+      S.get "/someRoute" $ (S.json =<< smth sqlBackend))
 
 paramMaybe :: (Parsable a) => Text -> ActionM (Maybe a) 
 paramMaybe s = (do d <- param s
                    return (Just d)) `rescue` const (return Nothing)
 
-program = paramMaybe "program"
-city = paramMaybe "city"
 
-smth :: MyMonad ()
-smth = do
-  program' <- liftAction $ (fmap.fmap)  fromString program
-  city' <- liftAction $ (fmap.fmap) fromString city
-  let programString   = maybe "" (\s -> "and (program is not null) and (program = " <> s <> ")") (program'::Maybe Query)
-  -- look out for sql-injections! Perhaps quote_literal(" <> s <> ")?
-      cityString      =  maybe "" (\s -> "and (city is not null) and (city = " <> s <> ")") ( city'::Maybe Query)
-      callerQuery, userCallerQuery, caseQuery::Query
-      callerQuery     = "select callertype, calltype, count(*) from calltbl where"
-                       <> "(calldate >= ?) and (calldate < ?) and (calldate is not null) " <> programString <>
-                             cityString <>
-                             " group by callertype, calltype order by callertype, calltype"
-      userCallerQuery = mconcat [
-                                  "select u.realName, count(*) from calltbl c, usermetatbl u where",
-                                  " u.id = c.calltaker and",
-                                  " (calldate >= ?) and (calldate < ?) and (calldate is not null) ",
-                                  programString, cityString,
-                                  " group by u.realName order by u.realName"]
-      caseQuery       = mconcat [
-                            "select u.realName, count(*) from casetbl c, usermetatbl u where",
-                            " u.id = c.calltaker and",
-                            " (calldate >= ?) and (calldate < ?) and (calldate is not null) , ",
-                            programString,  cityString,
-                            " group by u.realName order by u.realName"]
-  calls <- queryRead_ callerQuery
-  liftAction $ Web.Scotty.json (toJSON (calls::[[Text]]))
-  where liftAction = lift . lift
-
+smth :: SqlBackend -> ActionM A.Value
+smth sqlBackend = do
+  program' <- paramMaybe "program"
+  city' <- paramMaybe "city"
+  let fromDate = fromGregorian 2000 03 13 
+      toDate = fromGregorian 2020 02 23
+      programFilter   = maybe [] (\s -> [CalltblProgram ==. Just s]) (program'::Maybe String)
+      cityString   = maybe [] (\s -> [CalltblCity ==. Just s]) (city'::Maybe String)
+      --callerQuery, userCallerQuery, caseQuery::Query
+      callerQuery     = selectList ([CalltblCalldate >=. Just fromDate,
+                                     CalltblCalldate <. Just toDate,
+                                     CalltblCalldate !=. Nothing] 
+                                 ++ programFilter) [Asc CalltblCallertype,
+                                                    Asc CalltblCalltype]
+  entityList <- runReaderT  callerQuery  sqlBackend
+  return $ toJSON $  fmap (\(Entity a b) -> b) entityList
+  
+ 
