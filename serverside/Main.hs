@@ -54,7 +54,9 @@ ourConnectionInfo =  "host=localhost port=5432 user=n dbname=postgresdatabase pa
 main :: IO ()
 main = runStdoutLoggingT $ withPostgresqlConn ourConnectionInfo $ (\sqlBackend -> do
     liftIO $ scotty 3000 $ do 
-      S.get "/someRoute" $ (S.json =<< smth sqlBackend))
+      S.get "/" $ S.file "../index.html"
+      S.post "/submit" $ S.text "grge"--(S.json =<< smth sqlBackend))
+      S.notFound $ S.text "404")
 
 paramMaybe :: (Parsable a) => Text -> ActionM (Maybe a) 
 paramMaybe s = (do d <- param s

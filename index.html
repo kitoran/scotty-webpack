@@ -1,0 +1,39 @@
+<html>
+    <head><title>Weather or something</title></head>
+    <body>
+        <form id="form" action="/submit" method="post">
+            <div>
+                <label for="program">Program:</label>
+                <input type="text" id="program" name="program" />
+            </div>
+            <div class="button">
+                <button type="button" onclick="funcsubmit()">submit</button>
+            </div>
+        </form>
+        <table id="table">
+            
+        </table>
+        <script type="text/javascript">
+        function populateTable(list) {
+            var header = "<tr><th>Service</th><th>Quantity</th><th>Middle something time</th></tr>";
+            var content = ""; 
+            var record;
+            for(record in list) {
+                content += "<tr><th>" + record.service + "</th><th>" + record.quantity + "</th><th>" + record.time; 
+            }
+            document.getElementById("table").innerHTML = header + content;
+        };
+        function funcsubmit() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                  document.getElementById("table").innerHTML = "<tr><th>Service</th><th>Quantity</th><th>Middle something time</th></tr>";
+                  populateTable(JSON.parse(xhttp.responseText));
+            };
+            var program = document.getElementById("program").value;
+            var get = "submit?program=$1".replace("$1", program);
+            xhttp.open("GET", get, true);
+            xhttp.send();
+        };
+        </script>
+    </body>
+</html>
