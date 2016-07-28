@@ -1,10 +1,37 @@
 <html>
-    <head><title>Weather or something</title></head>
+    <head>
+        <title>Weather or something</title>
+        <script src="http://cdn.jsdelivr.net/webshim/1.12.4/extras/modernizr-custom.js"></script>
+        <script src="//cdn.jsdelivr.net/webshim/1.14.5/polyfiller.js"></script>
+    </head>
     <body>
-        <form id="form" action="/submit" method="post">
+        <script>
+            webshims.setOptions('forms-ext', {types: 'date'});
+            webshims.polyfill('forms forms-ext');
+        </script>
+        <form id="form" action="/submit" method="get">
             <div>
                 <label for="program">Program:</label>
-                <input type="text" id="program" name="program" />
+                <select id="program">
+                </select> 
+            </div>
+            <div>
+                <label for="city">City:</label>
+                <select id="city">
+                </select> 
+            </div>
+            <div>
+                <label for="partner">Partner:</label>
+                <select id="partner">
+                </select> 
+            </div>
+            <div>
+                <label for="fromDate">From:</label>
+                <input type="date" name="fromDate" id="fromDate">
+            </div>
+            <div>
+                <label for="toDate">To:</label>
+                <input type="date" name="toDate" id="toDate">
             </div>
             <div class="button">
                 <button type="button" onclick="funcsubmit()">submit</button>
@@ -13,27 +40,7 @@
         <table id="table">
             
         </table>
-        <script type="text/javascript">
-        function populateTable(list) {
-            var header = "<tr><th>Service</th><th>Quantity</th><th>Middle something time</th></tr>";
-            var content = ""; 
-            var record;
-            for(record in list) {
-                content += "<tr><th>" + record.service + "</th><th>" + record.quantity + "</th><th>" + record.time; 
-            }
-            document.getElementById("table").innerHTML = header + content;
-        };
-        function funcsubmit() {
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function() {
-                  document.getElementById("table").innerHTML = "<tr><th>Service</th><th>Quantity</th><th>Middle something time</th></tr>";
-                  populateTable(JSON.parse(xhttp.responseText));
-            };
-            var program = document.getElementById("program").value;
-            var get = "submit?program=$1".replace("$1", program);
-            xhttp.open("GET", get, true);
-            xhttp.send();
-        };
+        <script src="rks.js">
         </script>
     </body>
 </html>

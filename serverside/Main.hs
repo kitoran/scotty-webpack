@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE FlexibleInstances          #-}
 import Control.Monad.Reader
 
 import Data.Monoid
@@ -38,11 +39,13 @@ Calltbl
     calldate Day Maybe
     program String Maybe
     city String Maybe
+    Primary callertype calltype 
     deriving Show Read Generic
 |]
 
 instance ToJSON Calltbl where
---ourConnectionInfo :: ConnectInfo
+
+ourConnectionInfo :: ConnectionString
 ourConnectionInfo =  "host=localhost port=5432 user=n dbname=postgresdatabase password=postgresspassword"  
 
 --queryRead :: (MonadReader Connection m, ToRow args, FromRow r, MonadIO m) => Query -> args -> m [r]
@@ -55,8 +58,13 @@ main :: IO ()
 main = runStdoutLoggingT $ withPostgresqlConn ourConnectionInfo $ (\sqlBackend -> do
     liftIO $ scotty 3000 $ do 
       S.get "/" $ S.file "../index.html"
-      S.post "/submit" $ S.text "grge"--(S.json =<< smth sqlBackend))
-      S.notFound $ S.text "404")
+      S.get "/submit" $ (S.json =<< smth sqlBackend)
+      S.post "/options" $ (S.text $ "{\"programs\":[\"program1\", \"program2\"], \"cities\":[\"Moscow\",\"New York\"], \"partners\":[\"partner1\"]}")
+      S.get "/:file" $ do
+           file <- param "file"
+           liftIO $ print $ "file: " ++ file
+           S.file ("../" ++ file)
+      S.notFound $ (liftIO $ print "404") >> S.file "rks.js")
 
 paramMaybe :: (Parsable a) => Text -> ActionM (Maybe a) 
 paramMaybe s = (do d <- param s
@@ -80,4 +88,3 @@ smth sqlBackend = do
   entityList <- runReaderT  callerQuery  sqlBackend
   return $ toJSON $  fmap (\(Entity a b) -> b) entityList
   
- 
